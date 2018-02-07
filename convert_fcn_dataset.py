@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+#coding:utf-8
 import logging
 import os
 
 import cv2
 import numpy as np
 import tensorflow as tf
+from object_detection.utils import dataset_util
 from vgg import vgg_16
 
 
@@ -40,8 +42,10 @@ def image2label(im):
 
 
 def dict_to_tf_example(data, label):
-    with open(data, 'rb') as inf:
-        encoded_data = inf.read()
+    #with open(data, 'rb') as inf:
+    #    encoded_data = inf.read()
+    with tf.gfile.GFile(data, 'rb') as fid:
+        encoded_jpg = fid.read()
     img_label = cv2.imread(label)
     img_mask = image2label(img_label)
     encoded_label = img_mask.astype(np.uint8).tobytes()
@@ -50,15 +54,16 @@ def dict_to_tf_example(data, label):
     if height < vgg_16.default_image_size or width < vgg_16.default_image_size:
         # 保证最后随机裁剪的尺寸
         return None
-
+    filename=os.path.basename(data)
+    #logging.warning('label is %s',label)
     # Your code here, fill the dict
     feature_dict = {
-        'image/height': None,
-        'image/width': None,
-        'image/filename': None,
-        'image/encoded': None,
-        'image/label': None,
-        'image/format': None,
+        'image/height':  dataset_util.int64_feature(height),
+        'image/width': dataset_util.int64_feature(width),
+        'image/filename': dataset_util.bytes_feature(filename.encode('utf8')),
+        'image/encoded': dataset_util.bytes_feature(encoded_jpg),
+        'image/label': dataset_util.bytes_feature(encoded_label),
+        'image/format': dataset_util.bytes_feature('jpg'.encode('utf8')),
     }
     example = tf.train.Example(features=tf.train.Features(feature=feature_dict))
     return example
@@ -66,7 +71,15 @@ def dict_to_tf_example(data, label):
 
 def create_tf_record(output_filename, file_pars):
     # Your code here
-    pass
+    writer = tf.python_io.TFRecordWriter(output_filename)
+    for (data,label) in file_pars:
+        try:
+            tf_example = dict_to_tf_example(data, label)
+            if tf_example:
+                writer.write(tf_example.SerializeToString())
+        except ValueError:
+            logging.warning('Invalid example: , ignoring.')
+    writer.close()
 
 
 def read_images_names(root, train=True):
